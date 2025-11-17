@@ -1,6 +1,6 @@
-CUDA_VISIBLE_DEVICES=7 \
+CUDA_VISIBLE_DEVICES=3,4,5,6 \
   OMP_NUM_THREADS=16 \
   torchrun \
-  --nproc_per_node=1 \
+  --nproc_per_node=4 \
   --master_port 29600 \
   train.py

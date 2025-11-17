@@ -18,7 +18,7 @@ from vecset_vae.Model.perceiver_cross_attention_decoder import (
 class BSplineVAE(nn.Module):
     def __init__(
         self,
-        use_downsample: bool = False,
+        use_downsample: bool = True,
         num_latents: int = 64,
         embed_dim: int = 64,
         width: int = 768,
