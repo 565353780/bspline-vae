@@ -142,8 +142,7 @@ class BSplineVAE(nn.Module):
             posterior (DiagonalGaussianDistribution or None):
         """
 
-        coarse_pc, coarse_feats = coarse_surface[..., :3], coarse_surface[..., 3:]
-        shape_latents = self.encoder(coarse_pc, coarse_feats, split=self.split)
+        shape_latents = self.encoder(coarse_surface, split=self.split)
         return shape_latents
 
     def encode_kl_embed(
