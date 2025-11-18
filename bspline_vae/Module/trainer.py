@@ -6,6 +6,7 @@ from base_trainer.Module.base_trainer import BaseTrainer
 
 from bspline_vae.Dataset.random_bsp_surf import RandomBspSurfDataset
 from bspline_vae.Model.bspline_vae import BSplineVAE
+from bspline_vae.Method.triangle import buildUVMesh
 
 
 class Trainer(BaseTrainer):
@@ -36,13 +37,15 @@ class Trainer(BaseTrainer):
     ) -> None:
         self.dataset_root_folder_path = dataset_root_folder_path
 
-        self.epoch_length: int = 1000000
+        self.epoch_length: int = 10000
         self.degree_u: int = 3
         self.degree_v: int = 3
         self.size_u: int = 5
         self.size_v: int = 5
-        self.sample_num_u: int = 40
-        self.sample_num_v: int = 40
+        self.sample_num_u: int = 50
+        self.sample_num_v: int = 50
+        self.query_num_u: int = 50
+        self.query_num_v: int = 50
 
         self.gt_sample_added_to_logger = False
 
@@ -86,6 +89,8 @@ class Trainer(BaseTrainer):
                 self.size_v,
                 self.sample_num_u,
                 self.sample_num_v,
+                self.query_num_u,
+                self.query_num_v,
             ),
             "repeat_num": 1,
         }
@@ -100,6 +105,8 @@ class Trainer(BaseTrainer):
                     self.size_v,
                     self.sample_num_u,
                     self.sample_num_v,
+                    self.query_num_u,
+                    self.query_num_v,
                 ),
             }
 
@@ -139,6 +146,10 @@ class Trainer(BaseTrainer):
         return loss_dict
 
     def preProcessData(self, data_dict: dict, is_training: bool = False) -> dict:
+        batch_num = data_dict['query_uv'].shape[0]
+        data_dict['query_uv'] = data_dict['query_uv'].reshape(batch_num, -1, 2)
+        data_dict['query_pts'] = data_dict['query_pts'].reshape(batch_num, -1, 3)
+
         if is_training:
             data_dict["sample_posterior"] = True
             data_dict["split"] = "train"
@@ -151,24 +162,35 @@ class Trainer(BaseTrainer):
     @torch.no_grad()
     def sampleModelStep(self, model: nn.Module, model_name: str) -> bool:
         # FIXME: skip this since it will occur NCCL error
-        return True
+        # return True
 
-        dataset = self.dataloader_dict["dino"]["dataset"]
+        dataset = self.dataloader_dict["rand"]["dataset"]
 
         model.eval()
 
-        data_dict = dataset.__getitem__(1)
+        data_dict = dataset.__getitem__(0)
+        data_dict["sample_posterior"] = False
+        data_dict["split"] = "val"
 
-        print("[INFO][BaseDiffusionTrainer::sampleModelStep]")
-        print("\t start sample shape code....")
+        # process data here
+        u_num, v_num = data_dict['query_uv'].shape[:2]
+        data_dict['sample_pts'] = data_dict['sample_pts'].reshape(1, -1, 3).to(self.device, dtype=self.dtype)
+        data_dict['query_uv'] = data_dict['query_uv'].reshape(1, -1, 2).to(self.device, dtype=self.dtype)
+
+        result_dict = model(data_dict)
+
+        self.logger.addMesh(
+            model_name + "/query",
+            buildUVMesh(result_dict['query_pts'].reshape(u_num, v_num, 3)),
+            self.step,
+        )
 
         if not self.gt_sample_added_to_logger:
-            # render gt here
-
-            # self.logger.addPointCloud("GT_MASH/gt_mash", pcd, self.step)
-
+            self.logger.addMesh(
+                model_name + "/gt",
+                buildUVMesh(data_dict['query_pts']),
+                self.step,
+            )
             self.gt_sample_added_to_logger = True
-
-        # self.logger.addPointCloud(model_name + "/pcd_" + str(i), pcd, self.step)
 
         return True
