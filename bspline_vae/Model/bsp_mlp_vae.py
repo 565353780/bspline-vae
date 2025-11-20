@@ -10,12 +10,106 @@ from vecset_vae.Model.Transformer.perceiver_1d import Perceiver
 from vecset_vae.Model.perceiver_cross_attention_encoder import (
     PerceiverCrossAttentionEncoder,
 )
-from vecset_vae.Model.perceiver_cross_attention_decoder import (
-    PerceiverCrossAttentionDecoder,
-)
 
 
-class BSplineVAE(nn.Module):
+class MLPDecoder(nn.Module):
+    """MLP解码器，用于将查询点和潜在特征解码为3D坐标
+    
+    Args:
+        embedder: 用于位置编码的嵌入器
+        out_dim: 输出维度，通常为3（表示3D坐标）
+        hidden_dim: MLP隐藏层维度
+        num_layers: MLP层数
+        init_scale: 初始化缩放因子
+    """
+    def __init__(
+        self,
+        embedder,
+        out_dim: int = 3,
+        hidden_dim: int = 256,
+        num_layers: int = 4,
+        init_scale: float = 0.25,
+        **kwargs
+    ) -> None:
+        super().__init__()
+        self.embedder = embedder
+        self.out_dim = out_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.init_scale = init_scale
+        
+        # 嵌入维度
+        self.embed_dim = embedder.out_dim
+        
+        # 使用自适应池化来处理可变长度的latents
+        self.adaptive_pool = nn.AdaptiveAvgPool1d(hidden_dim)
+        
+        # 构建MLP层
+        mlp_layers = []
+        input_dim = self.embed_dim + hidden_dim
+        
+        # 添加隐藏层
+        for _ in range(num_layers - 1):
+            mlp_layers.append(nn.Linear(input_dim, hidden_dim))
+            mlp_layers.append(nn.LayerNorm(hidden_dim))
+            mlp_layers.append(nn.ReLU(inplace=True))
+            input_dim = hidden_dim
+        
+        # 添加输出层
+        mlp_layers.append(nn.Linear(hidden_dim, out_dim))
+        
+        self.mlp = nn.Sequential(*mlp_layers)
+        
+        # 初始化权重
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """初始化网络权重"""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, std=self.init_scale)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+    
+    def forward(self, queries: torch.Tensor, latents: torch.Tensor) -> torch.Tensor:
+        """前向传播
+        
+        Args:
+            queries: 查询点坐标，形状为 [B, L, 2]（UV坐标）
+            latents: 潜在特征，形状为 [B, M, 64]，其中M是可变的
+            
+        Returns:
+            解码后的3D坐标，形状为 [B, L, out_dim]
+        """
+        B, L, D = queries.shape
+        
+        # 对查询点进行位置编码
+        embedded_queries = self.embedder(queries)
+        
+        # 处理可变维度的latents [B, M, 64] -> [B, hidden_dim]
+        # 使用自适应池化将任意长度的序列压缩到固定维度
+        # 先转置为 [B, 64, M] 以便进行1D池化
+        latents_transposed = latents.transpose(1, 2)  # [B, 64, M]
+        
+        # 对每个通道进行自适应池化，将M长度压缩到hidden_dim
+        global_features_pooled = self.adaptive_pool(latents_transposed)  # [B, 64, hidden_dim]
+        
+        # 对通道维度求和，得到最终的全局特征
+        global_features = global_features_pooled.sum(dim=1)  # [B, hidden_dim]
+        
+        # 将全局特征扩展到与查询点相同的批次维度 [B, hidden_dim] -> [B, L, hidden_dim]
+        global_features = global_features.unsqueeze(1).repeat(1, L, 1)
+        
+        # 拼接查询点编码和全局特征
+        combined_features = torch.cat([embedded_queries, global_features], dim=-1)
+        
+        # 通过MLP解码
+        output = self.mlp(combined_features)
+        
+        return output
+
+
+class BSplineMLPVAE(nn.Module):
     def __init__(
         self,
         use_downsample: bool = False,
@@ -97,18 +191,13 @@ class BSplineVAE(nn.Module):
             use_checkpoint=self.use_checkpoint,
         )
 
-        # decoder
         if self.query_dim == 3:
-            self.decoder = PerceiverCrossAttentionDecoder(
+            self.decoder = MLPDecoder(
                 embedder=self.embedder,
                 out_dim=self.out_dim,
-                num_latents=self.num_latents,
-                width=self.width,
-                heads=self.heads,
+                hidden_dim=256,
+                num_layers=4,
                 init_scale=self.init_scale,
-                qkv_bias=self.qkv_bias,
-                use_flash=self.use_flash,
-                use_checkpoint=self.use_checkpoint,
             )
         else:
             self.decode_embedder = FourierEmbedder(
@@ -116,16 +205,12 @@ class BSplineVAE(nn.Module):
                 input_dim=self.query_dim,
                 include_pi=self.include_pi,
             )
-            self.decoder = PerceiverCrossAttentionDecoder(
+            self.decoder = MLPDecoder(
                 embedder=self.decode_embedder,
                 out_dim=self.out_dim,
-                num_latents=self.num_latents,
-                width=self.width,
-                heads=self.heads,
+                hidden_dim=256,
+                num_layers=4,
                 init_scale=self.init_scale,
-                qkv_bias=self.qkv_bias,
-                use_flash=self.use_flash,
-                use_checkpoint=self.use_checkpoint,
             )
         return
 
@@ -201,14 +286,7 @@ class BSplineVAE(nn.Module):
             shape_latents, sample_posterior=sample_posterior
         )
 
-        print(self.num_latents)
-        print(shape_latents.shape)
-        print(kl_embed.shape)
-
         latents = self.decode(kl_embed)
-
-        print(latents.shape)
-        exit()
 
         query_pts = self.query(query_uv, latents)
 

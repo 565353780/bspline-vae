@@ -46,6 +46,8 @@ class RandomBspSurfDataset(Dataset):
 
         self.sample_num_uv = self.sample_num_u * self.sample_num_v
 
+        self.random_u_values = genBiggerArray(self.size_u - 1)   # shape [su]
+        self.random_v_values = genBiggerArray(self.size_v - 1)   # shape [sv]
         self.random_ctrlpts_xy = 0.01 * (torch.rand(self.size_u - 1,
                                             self.size_v - 1,
                                             2,
@@ -61,6 +63,8 @@ class RandomBspSurfDataset(Dataset):
         return self.epoch_length
 
     def __getitem__(self, index):
+        index = 0
+
         bspline_surface = BSplineSurface(
             self.degree_u,
             self.degree_v,
@@ -78,20 +82,6 @@ class RandomBspSurfDataset(Dataset):
         # 1. 初始化 ctrlpts 为 tensor
         ctrlpts = torch.zeros((su, sv, 3), dtype=torch.float32)
 
-        # 2. u、v 方向的参数（需你自己把 genBiggerArray 改成 PyTorch 版本）
-        u_values = genBiggerArray(su)   # shape [su]
-        v_values = genBiggerArray(sv)   # shape [sv]
-
-        surf_length = 1.0
-
-        # 3. 填充 ctrlpts[x, :, 0] 和 ctrlpts[:, y, 1]
-        # X 方向 (u)
-        ctrlpts[:, :, 0] = surf_length * (u_values - 0.5).unsqueeze(1)   # broadcast to [su,sv]
-
-        # Y 方向 (v)
-        ctrlpts[:, :, 1] = surf_length * (v_values - 0.5).unsqueeze(0)   # broadcast to [su,sv]
-
-        # 4. 根据 index 区分初始化模式
         if index == 0:
             # xy 偏移
             ctrlpts[:, :, :2] = ctrlpts[:, :, :2] + self.random_ctrlpts_xy
@@ -99,6 +89,9 @@ class RandomBspSurfDataset(Dataset):
             ctrlpts[:, :, 2] = self.random_ctrlpts_z
 
             random_rot = self.random_rot
+
+            random_u_values = self.random_u_values
+            random_v_values = self.random_v_values
         else:
             # xy 加很小的噪声
             ctrlpts[:, :, :2] = ctrlpts[:, :, :2] + \
@@ -108,11 +101,24 @@ class RandomBspSurfDataset(Dataset):
 
             random_rot = random_rotation_matrices(1)[0]
 
+            # 2. u、v 方向的参数（需你自己把 genBiggerArray 改成 PyTorch 版本）
+            random_u_values = genBiggerArray(su)   # shape [su]
+            random_v_values = genBiggerArray(sv)   # shape [sv]
+
+        surf_length = 1.0
+
+        # 3. 填充 ctrlpts[x, :, 0] 和 ctrlpts[:, y, 1]
+        # X 方向 (u)
+        ctrlpts[:, :, 0] = surf_length * (random_u_values - 0.5).unsqueeze(1)   # broadcast to [su,sv]
+
+        # Y 方向 (v)
+        ctrlpts[:, :, 1] = surf_length * (random_v_values - 0.5).unsqueeze(0)   # broadcast to [su,sv]
+
         ctrlpts = ctrlpts @ random_rot
 
         bspline_surface.loadParams(ctrlpts=ctrlpts)
 
-        sample_uv = torch.rand(self.sample_num_uv, 2)
+        sample_uv = createUVMat(self.sample_num_u, self.sample_num_v).reshape(-1, 2)
 
         sample_pts = bspline_surface.toUVSamplePoints(sample_uv)
 
@@ -128,11 +134,13 @@ class RandomBspSurfDataset(Dataset):
 
         bspline_surface.loadParams(ctrlpts=new_ctrlpts)
 
-        new_sample_pts = bspline_surface.toUVSamplePoints(sample_uv)
+        random_sample_uv = torch.rand(self.sample_num_uv, 2)
 
-        query_uv = createUVMat(self.query_num_u, self.query_num_v)
+        new_sample_pts = bspline_surface.toUVSamplePoints(random_sample_uv)
 
-        query_pts = bspline_surface.toUVSamplePoints(query_uv.reshape(-1, 2)).reshape(self.query_num_u, self.query_num_v, 3)
+        # query_uv = createUVMat(self.query_num_u, self.query_num_v)
+
+        # query_pts = bspline_surface.toUVSamplePoints(query_uv.reshape(-1, 2)).reshape(self.query_num_u, self.query_num_v, 3)
 
         data = {
             #"degree_u": bspline_surface.degree_u,
@@ -141,11 +149,11 @@ class RandomBspSurfDataset(Dataset):
             #"size_v": bspline_surface.size_u,
             #"sample_num_u": bspline_surface.sample_num_u,
             #"sample_num_v": bspline_surface.sample_num_u,
-            # "ctrlpts": bspline_surface.ctrlpts,
-            # "sample_uv": sample_uv,
+            #"ctrlpts": bspline_surface.ctrlpts,
+            "sample_uv": random_sample_uv,
             "sample_pts": new_sample_pts,
-            "query_uv": query_uv,
-            "query_pts": query_pts,
+            #"query_uv": query_uv,
+            #"query_pts": query_pts,
         }
 
         return data

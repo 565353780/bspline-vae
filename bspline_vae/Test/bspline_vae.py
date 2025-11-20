@@ -1,11 +1,13 @@
 import sys
 sys.path.append('../bspline-surface')
 sys.path.append('../vecset-vae')
+sys.path.append('../point-cept')
 
 import torch
 
 from bspline_vae.Dataset.random_bsp_surf import RandomBspSurfDataset
 from bspline_vae.Model.bspline_vae import BSplineVAE
+from bspline_vae.Model.ptv3_uv import PTV3UVNet
 
 def test():
     dataset = RandomBspSurfDataset()
@@ -14,7 +16,7 @@ def test():
     data_dict["split"] = 'train'
     data_dict["sample_posterior"] = True
 
-    bspline_vae = BSplineVAE().cuda()
+    bspline_vae = PTV3UVNet().cuda()
 
     print('==== data_dict ====')
     for key, value in data_dict.items():
@@ -29,9 +31,9 @@ def test():
         if isinstance(value, torch.Tensor):
             print(key, value.shape)
 
-    query_pts = result_dict['query_pts']
+    pred_uv = result_dict['uv']
 
-    loss = torch.mean(query_pts)
+    loss = torch.mean(pred_uv)
 
     loss.backward()
 

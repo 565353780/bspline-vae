@@ -3,6 +3,7 @@ import sys
 sys.path.append("../bspline-surface/")
 sys.path.append("../base-trainer/")
 sys.path.append("../vecset-vae/")
+sys.path.append("../point-cept/")
 
 import os
 import torch
@@ -15,10 +16,10 @@ def demo():
     assert dataset_root_folder_path is not None
     print(dataset_root_folder_path)
 
-    batch_size = 256
+    batch_size = 512
     accum_iter = 1
-    num_workers = min(16, batch_size)
-    model_file_path = "./output/vecset-v1/model_last.pth"
+    num_workers = 32
+    model_file_path = "./output/v1/model_last.pth"
     model_file_path = None
     weights_only = False
     device = "auto"
@@ -27,7 +28,7 @@ def demo():
     finetune_step_num = -1
     lr = 1e-4
     lr_batch_size = 256
-    ema_start_step = 5000
+    ema_start_step = 200
     ema_decay_init = 0.99
     ema_decay = 0.999
     save_result_folder_path = "auto"
@@ -62,6 +63,9 @@ def demo():
         use_amp,
         quick_test,
     )
+
+    model_size = trainer.getModelSize()
+    print('model size:', model_size / 1e6, 'M')
 
     trainer.train()
     return True
