@@ -21,7 +21,7 @@ class PTV3UVNet(nn.Module):
             enc_mode=False,
         )
 
-        self.uv_decoder = nn.Linear(64, 2)
+        self.tangent_decoder = nn.Linear(64, 6)
         return
 
     def forward(
@@ -59,10 +59,10 @@ class PTV3UVNet(nn.Module):
 
         feat = point.feat
 
-        uv = self.uv_decoder(feat)
+        tangents = self.tangent_decoder(feat)
 
         result_dict = {
-            "uv": uv,
+            "tangents": tangents,
         }
 
         if drop_prob > 0:

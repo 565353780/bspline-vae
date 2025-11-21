@@ -26,9 +26,9 @@ def demo():
     dtype = torch.float32
     warm_step_num = 200
     finetune_step_num = -1
-    lr = 1e-4
+    lr = 2e-5
     lr_batch_size = 256
-    ema_start_step = 200
+    ema_start_step = 5000
     ema_decay_init = 0.99
     ema_decay = 0.999
     save_result_folder_path = "auto"

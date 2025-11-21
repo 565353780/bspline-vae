@@ -20,6 +20,47 @@ def createUVMat(u_num: int, v_num: int) -> torch.Tensor:
     uv = torch.stack([uu, vv], dim=-1)  # shape: [u_num * v_num, 2]
     return uv
 
+def compute_uv_tangents_normalized(bspline_surface, uv, delta=1e-3):
+    """
+    uv: (N, 2)
+    return: (N, 2, 3)  # du,dv 已归一化
+    """
+    u = uv[:, 0]
+    v = uv[:, 1]
+
+    # ==== U-direction ====
+    u_minus = torch.clamp(u - delta, 0.0, 1.0)
+    u_plus  = torch.clamp(u + delta, 0.0, 1.0)
+
+    uv_u_minus = torch.stack([u_minus, v], dim=1)
+    uv_u_plus  = torch.stack([u_plus,  v], dim=1)
+
+    pts_u_minus = bspline_surface.toUVSamplePoints(uv_u_minus)
+    pts_u_plus  = bspline_surface.toUVSamplePoints(uv_u_plus)
+
+    du = pts_u_plus - pts_u_minus
+    denom_u = (u_plus - u_minus).unsqueeze(-1).clamp_min(1e-8)
+    du = du / denom_u
+    du = du / (du.norm(dim=1, keepdim=True).clamp_min(1e-9))  # 归一化
+
+    # ==== V-direction ====
+    v_minus = torch.clamp(v - delta, 0.0, 1.0)
+    v_plus  = torch.clamp(v + delta, 0.0, 1.0)
+
+    uv_v_minus = torch.stack([u, v_minus], dim=1)
+    uv_v_plus  = torch.stack([u, v_plus],  dim=1)
+
+    pts_v_minus = bspline_surface.toUVSamplePoints(uv_v_minus)
+    pts_v_plus  = bspline_surface.toUVSamplePoints(uv_v_plus)
+
+    dv = pts_v_plus - pts_v_minus
+    denom_v = (v_plus - v_minus).unsqueeze(-1).clamp_min(1e-8)
+    dv = dv / denom_v
+    dv = dv / (dv.norm(dim=1, keepdim=True).clamp_min(1e-9))
+
+    # ==== Nx2x3 ====
+    return torch.stack([du, dv], dim=1)
+
 class RandomBspSurfDataset(Dataset):
     def __init__(
         self,
@@ -46,8 +87,8 @@ class RandomBspSurfDataset(Dataset):
 
         self.sample_num_uv = self.sample_num_u * self.sample_num_v
 
-        self.random_u_values = genBiggerArray(self.size_u - 1)   # shape [su]
-        self.random_v_values = genBiggerArray(self.size_v - 1)   # shape [sv]
+        self.random_u_values = genBiggerArray(self.size_u - 1)
+        self.random_v_values = genBiggerArray(self.size_v - 1)
         self.random_ctrlpts_xy = 0.01 * (torch.rand(self.size_u - 1,
                                             self.size_v - 1,
                                             2,
@@ -56,15 +97,13 @@ class RandomBspSurfDataset(Dataset):
         self.random_ctrlpts_z = torch.rand(self.size_u - 1,
                                         self.size_v - 1,
                                         dtype=torch.float32) - 0.5
-        self.random_rot = random_rotation_matrices(1)[0]
+        # self.random_rot = random_rotation_matrices(1)[0]
         return
 
     def __len__(self):
         return self.epoch_length
 
     def __getitem__(self, index):
-        index = 0
-
         bspline_surface = BSplineSurface(
             self.degree_u,
             self.degree_v,
@@ -88,7 +127,7 @@ class RandomBspSurfDataset(Dataset):
             # z 方向直接赋值
             ctrlpts[:, :, 2] = self.random_ctrlpts_z
 
-            random_rot = self.random_rot
+            # random_rot = self.random_rot
 
             random_u_values = self.random_u_values
             random_v_values = self.random_v_values
@@ -99,9 +138,8 @@ class RandomBspSurfDataset(Dataset):
             # z 随机 [-0.5, 0.5]
             ctrlpts[:, :, 2] = torch.rand((su, sv)) - 0.5
 
-            random_rot = random_rotation_matrices(1)[0]
+            # random_rot = random_rotation_matrices(1)[0]
 
-            # 2. u、v 方向的参数（需你自己把 genBiggerArray 改成 PyTorch 版本）
             random_u_values = genBiggerArray(su)   # shape [su]
             random_v_values = genBiggerArray(sv)   # shape [sv]
 
@@ -114,7 +152,7 @@ class RandomBspSurfDataset(Dataset):
         # Y 方向 (v)
         ctrlpts[:, :, 1] = surf_length * (random_v_values - 0.5).unsqueeze(0)   # broadcast to [su,sv]
 
-        ctrlpts = ctrlpts @ random_rot
+        # ctrlpts = ctrlpts @ random_rot
 
         bspline_surface.loadParams(ctrlpts=ctrlpts)
 
@@ -138,6 +176,8 @@ class RandomBspSurfDataset(Dataset):
 
         new_sample_pts = bspline_surface.toUVSamplePoints(random_sample_uv)
 
+        tangents = compute_uv_tangents_normalized(bspline_surface, random_sample_uv).reshape(-1, 6)
+
         # query_uv = createUVMat(self.query_num_u, self.query_num_v)
 
         # query_pts = bspline_surface.toUVSamplePoints(query_uv.reshape(-1, 2)).reshape(self.query_num_u, self.query_num_v, 3)
@@ -150,7 +190,7 @@ class RandomBspSurfDataset(Dataset):
             #"sample_num_u": bspline_surface.sample_num_u,
             #"sample_num_v": bspline_surface.sample_num_u,
             #"ctrlpts": bspline_surface.ctrlpts,
-            "sample_uv": random_sample_uv,
+            "sample_tangents": tangents,
             "sample_pts": new_sample_pts,
             #"query_uv": query_uv,
             #"query_pts": query_pts,

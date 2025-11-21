@@ -154,21 +154,23 @@ class Trainer(BaseTrainer):
         }
         '''
 
-        gt_uv = data_dict["sample_uv"]
-        pred_uv = result_dict["uv"]
+        gt_tangents = data_dict["sample_tangents"]
+        pred_tangents = result_dict["tangents"]
         mask = result_dict.get('mask', None)
 
         if mask is not None:
-            remain_idx_expand = mask.unsqueeze(-1).expand(-1, -1, 2)
-            gt_uv = torch.gather(gt_uv, 1, remain_idx_expand).reshape(-1, 2)
+            remain_idx_expand = mask.unsqueeze(-1).expand(-1, -1, 6)
+            gt_tangents = torch.gather(gt_tangents, 1, remain_idx_expand)
 
-        loss_uv = self.l1_loss(pred_uv, gt_uv)
+        gt_tangents = gt_tangents.reshape(-1, 6)
 
-        loss = loss_uv
+        loss_tangents = self.l1_loss(pred_tangents, gt_tangents)
+
+        loss = loss_tangents
 
         loss_dict = {
             "Loss": loss,
-            #"LossUV": loss_uv,
+            #"LossTangents": loss_tangents,
         }
 
         return loss_dict
@@ -183,7 +185,7 @@ class Trainer(BaseTrainer):
         if is_training:
             data_dict["sample_posterior"] = True
             data_dict["split"] = "train"
-            data_dict["drop_prob"] = 0.2
+            data_dict["drop_prob"] = 0
         else:
             data_dict["sample_posterior"] = False
             data_dict["split"] = "val"
