@@ -176,11 +176,11 @@ class RandomBspSurfDataset(Dataset):
 
         new_sample_pts = bspline_surface.toUVSamplePoints(random_sample_uv)
 
-        tangents = compute_uv_tangents_normalized(bspline_surface, random_sample_uv).reshape(-1, 6)
+        # tangents = compute_uv_tangents_normalized(bspline_surface, random_sample_uv).reshape(-1, 6)
 
-        # query_uv = createUVMat(self.query_num_u, self.query_num_v)
+        query_uv = createUVMat(self.query_num_u, self.query_num_v)
 
-        # query_pts = bspline_surface.toUVSamplePoints(query_uv.reshape(-1, 2)).reshape(self.query_num_u, self.query_num_v, 3)
+        query_pts = bspline_surface.toUVSamplePoints(query_uv.reshape(-1, 2)).reshape(self.query_num_u, self.query_num_v, 3)
 
         data = {
             #"degree_u": bspline_surface.degree_u,
@@ -190,10 +190,12 @@ class RandomBspSurfDataset(Dataset):
             #"sample_num_u": bspline_surface.sample_num_u,
             #"sample_num_v": bspline_surface.sample_num_u,
             #"ctrlpts": bspline_surface.ctrlpts,
-            "sample_tangents": tangents,
+            "sample_uv": random_sample_uv,
             "sample_pts": new_sample_pts,
-            #"query_uv": query_uv,
-            #"query_pts": query_pts,
+            #"sample_tangents": tangents,
+            "query_uv": query_uv,
+            "query_pts": query_pts,
+            "bsp_surf": bspline_surface,
         }
 
         return data

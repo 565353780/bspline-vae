@@ -154,23 +154,23 @@ class Trainer(BaseTrainer):
         }
         '''
 
-        gt_tangents = data_dict["sample_tangents"]
-        pred_tangents = result_dict["tangents"]
+        gt_uv = data_dict["sample_uv"]
+        pred_uv = result_dict["uv"]
         mask = result_dict.get('mask', None)
 
         if mask is not None:
-            remain_idx_expand = mask.unsqueeze(-1).expand(-1, -1, 6)
-            gt_tangents = torch.gather(gt_tangents, 1, remain_idx_expand)
+            remain_idx_expand = mask.unsqueeze(-1).expand(-1, -1, 2)
+            gt_uv = torch.gather(gt_uv, 1, remain_idx_expand)
 
-        gt_tangents = gt_tangents.reshape(-1, 6)
+        gt_uv = gt_uv.reshape(-1, 2)
 
-        loss_tangents = self.l1_loss(pred_tangents, gt_tangents)
+        loss_uv = self.l1_loss(pred_uv, gt_uv)
 
-        loss = loss_tangents
+        loss = loss_uv
 
         loss_dict = {
             "Loss": loss,
-            #"LossTangents": loss_tangents,
+            #"LossUV": loss_uv,
         }
 
         return loss_dict
